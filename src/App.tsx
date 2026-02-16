@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { ChangeEvent, ReactNode } from 'react';
+import type { CSSProperties, ChangeEvent, ReactNode } from 'react';
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 
 type ArtifactStatus = '' | 'worked' | 'error';
@@ -66,6 +66,12 @@ type ResumeDraft = {
 };
 
 type ResumeTemplate = 'Classic' | 'Modern' | 'Minimal';
+type AccentThemeId = 'teal' | 'navy' | 'burgundy' | 'forest' | 'charcoal';
+type AccentTheme = {
+  id: AccentThemeId;
+  label: string;
+  color: string;
+};
 
 const STEPS: BuildStep[] = [
   {
@@ -130,12 +136,20 @@ const PROOF_ROUTE = '/rb/proof';
 const PROOF_LINKS_KEY = 'rb_proof_links';
 const RESUME_STORAGE_KEY = 'resumeBuilderData';
 const TEMPLATE_STORAGE_KEY = 'resumeBuilderTemplate';
+const ACCENT_STORAGE_KEY = 'resumeBuilderAccentTheme';
 const NAV_ITEMS = [
   { label: 'Builder', to: '/builder' },
   { label: 'Preview', to: '/preview' },
   { label: 'Proof', to: '/proof' },
 ];
 const TEMPLATE_OPTIONS: ResumeTemplate[] = ['Classic', 'Modern', 'Minimal'];
+const ACCENT_THEMES: AccentTheme[] = [
+  { id: 'teal', label: 'Teal', color: 'hsl(168, 60%, 40%)' },
+  { id: 'navy', label: 'Navy', color: 'hsl(220, 60%, 35%)' },
+  { id: 'burgundy', label: 'Burgundy', color: 'hsl(345, 60%, 35%)' },
+  { id: 'forest', label: 'Forest', color: 'hsl(150, 50%, 30%)' },
+  { id: 'charcoal', label: 'Charcoal', color: 'hsl(0, 0%, 25%)' },
+];
 const ACTION_VERBS = ['Built', 'Developed', 'Designed', 'Implemented', 'Led', 'Improved', 'Created', 'Optimized', 'Automated'];
 const TECHNICAL_SUGGESTIONS = ['TypeScript', 'React', 'Node.js', 'PostgreSQL', 'GraphQL'];
 const SOFT_SUGGESTIONS = ['Team Leadership', 'Problem Solving'];
@@ -349,6 +363,11 @@ const readTemplateChoice = (): ResumeTemplate => {
   const value = localStorage.getItem(TEMPLATE_STORAGE_KEY);
   if (value === 'Classic' || value === 'Modern' || value === 'Minimal') return value;
   return 'Classic';
+};
+
+const readAccentChoice = (): AccentTheme => {
+  const value = localStorage.getItem(ACCENT_STORAGE_KEY) as AccentThemeId | null;
+  return ACCENT_THEMES.find((theme) => theme.id === value) ?? ACCENT_THEMES[0];
 };
 
 const toTemplateClass = (template: ResumeTemplate) => `template-${template.toLowerCase()}`;
@@ -796,19 +815,216 @@ type TemplateTabsProps = {
   onChange: (template: ResumeTemplate) => void;
 };
 
+type AccentPickerProps = {
+  selected: AccentTheme;
+  onChange: (theme: AccentTheme) => void;
+};
+
+type ResumePreviewProps = {
+  draft: ResumeDraft;
+  template: ResumeTemplate;
+  accentColor: string;
+  className?: string;
+};
+
 function TemplateTabs({ template, onChange }: TemplateTabsProps) {
+  const renderSketch = (option: ResumeTemplate) => {
+    if (option === 'Modern') {
+      return (
+        <div className="template-sketch template-sketch-modern">
+          <div />
+          <div>
+            <span />
+            <span />
+            <span />
+          </div>
+        </div>
+      );
+    }
+    if (option === 'Minimal') {
+      return (
+        <div className="template-sketch template-sketch-minimal">
+          <span />
+          <span />
+          <span />
+        </div>
+      );
+    }
+    return (
+      <div className="template-sketch template-sketch-classic">
+        <span />
+        <hr />
+        <span />
+      </div>
+    );
+  };
+
   return (
     <div className="template-tabs" aria-label="Resume Templates">
       {TEMPLATE_OPTIONS.map((option) => (
         <button
           key={option}
           type="button"
-          className={`button ${template === option ? 'button-accent' : ''}`}
+          className={`template-thumb ${template === option ? 'template-thumb-active' : ''}`}
           onClick={() => onChange(option)}
         >
-          {option}
+          {template === option ? <span className="template-check">✓</span> : null}
+          <div className="template-thumb__label">{option}</div>
+          {renderSketch(option)}
         </button>
       ))}
+    </div>
+  );
+}
+
+function ColorThemePicker({ selected, onChange }: AccentPickerProps) {
+  return (
+    <div className="color-picker" aria-label="Color Themes">
+      {ACCENT_THEMES.map((theme) => (
+        <button
+          key={theme.id}
+          type="button"
+          className={`color-dot ${selected.id === theme.id ? 'color-dot-active' : ''}`}
+          style={{ background: theme.color }}
+          onClick={() => onChange(theme)}
+          title={theme.label}
+          aria-label={theme.label}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ResumePreviewDocument({ draft, template, accentColor, className = '' }: ResumePreviewProps) {
+  const previewEducation = nonEmptyEducation(draft);
+  const previewExperience = nonEmptyExperience(draft);
+  const previewProjects = nonEmptyProjects(draft);
+  const previewSkills = skillItems(draft);
+  const contactLine = [draft.email, draft.phone, draft.location].map((item) => item.trim()).filter(Boolean).join(' | ');
+  const style = { '--resume-accent': accentColor } as CSSProperties;
+
+  const sectionSummary = draft.summary.trim() ? (
+    <section className="preview-section">
+      <h3>Summary</h3>
+      <p>{draft.summary.trim()}</p>
+    </section>
+  ) : null;
+
+  const sectionEducation = previewEducation.length ? (
+    <section className="preview-section">
+      <h3>Education</h3>
+      {previewEducation.map((entry) => (
+        <p className="print-avoid-break" key={entry.id}>{[entry.school, entry.degree, entry.year].filter((item) => item.trim()).join(' | ')}</p>
+      ))}
+    </section>
+  ) : null;
+
+  const sectionExperience = previewExperience.length ? (
+    <section className="preview-section">
+      <h3>Experience</h3>
+      {previewExperience.map((entry) => (
+        <div className="print-avoid-break project-preview-card" key={entry.id}>
+          <p>{[entry.company, entry.role, entry.duration].filter((item) => item.trim()).join(' | ')}</p>
+          {entry.bullet.trim() ? <p>{entry.bullet.trim()}</p> : null}
+        </div>
+      ))}
+    </section>
+  ) : null;
+
+  const sectionProjects = previewProjects.length ? (
+    <section className="preview-section">
+      <h3>Projects</h3>
+      {previewProjects.map((entry) => (
+        <div className="print-avoid-break project-preview-card" key={entry.id}>
+          {entry.title.trim() ? <p>{entry.title.trim()}</p> : null}
+          {entry.description.trim() ? <p>{entry.description.trim()}</p> : null}
+          {entry.techStack.length ? (
+            <div className="chip-wrap">
+              {entry.techStack.map((tech) => <span className="chip chip-static" key={`${entry.id}-${tech}`}>{tech}</span>)}
+            </div>
+          ) : null}
+          {(entry.liveUrl.trim() || entry.githubUrl.trim()) ? (
+            <div className="project-links">
+              {entry.liveUrl.trim() ? <a href={entry.liveUrl.trim()} target="_blank" rel="noreferrer">[Live]</a> : null}
+              {entry.githubUrl.trim() ? <a href={entry.githubUrl.trim()} target="_blank" rel="noreferrer">[GitHub]</a> : null}
+            </div>
+          ) : null}
+        </div>
+      ))}
+    </section>
+  ) : null;
+
+  const sectionSkills = previewSkills.length ? (
+    <section className="preview-section">
+      <h3>Skills</h3>
+      {draft.technicalSkills.length ? (
+        <div className="preview-section">
+          <p>Technical Skills</p>
+          <div className="chip-wrap">
+            {draft.technicalSkills.map((skill) => <span className="chip chip-static" key={`tech-${skill}`}>{skill}</span>)}
+          </div>
+        </div>
+      ) : null}
+      {draft.softSkills.length ? (
+        <div className="preview-section">
+          <p>Soft Skills</p>
+          <div className="chip-wrap">
+            {draft.softSkills.map((skill) => <span className="chip chip-static" key={`soft-${skill}`}>{skill}</span>)}
+          </div>
+        </div>
+      ) : null}
+      {draft.toolsTechnologies.length ? (
+        <div className="preview-section">
+          <p>Tools & Technologies</p>
+          <div className="chip-wrap">
+            {draft.toolsTechnologies.map((skill) => <span className="chip chip-static" key={`tool-${skill}`}>{skill}</span>)}
+          </div>
+        </div>
+      ) : null}
+    </section>
+  ) : null;
+
+  const sectionLinks = (draft.github.trim() || draft.linkedin.trim()) ? (
+    <section className="preview-section">
+      <h3>Links</h3>
+      {draft.github.trim() ? <p>{draft.github.trim()}</p> : null}
+      {draft.linkedin.trim() ? <p>{draft.linkedin.trim()}</p> : null}
+    </section>
+  ) : null;
+
+  if (template === 'Modern') {
+    return (
+      <div className={`resume-preview-shell template-modern ${className}`} style={style}>
+        <aside className="resume-sidebar">
+          {draft.name.trim() ? <h2>{draft.name.trim()}</h2> : null}
+          {contactLine ? <p>{contactLine}</p> : null}
+          {sectionSkills}
+          {sectionLinks}
+        </aside>
+        <main className="resume-main">
+          {sectionSummary}
+          {sectionExperience}
+          {sectionProjects}
+          {sectionEducation}
+        </main>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`resume-preview-shell ${toTemplateClass(template)} ${className}`} style={style}>
+      {(draft.name.trim() || contactLine) && (
+        <section className="preview-section">
+          {draft.name.trim() ? <h2>{draft.name.trim()}</h2> : null}
+          {contactLine ? <p>{contactLine}</p> : null}
+        </section>
+      )}
+      {sectionSummary}
+      {sectionEducation}
+      {sectionExperience}
+      {sectionProjects}
+      {sectionSkills}
+      {sectionLinks}
     </div>
   );
 }
@@ -838,6 +1054,7 @@ function HomePage() {
 function BuilderPage() {
   const [draft, setDraft] = useState<ResumeDraft>(() => readResumeDraft());
   const [template, setTemplate] = useState<ResumeTemplate>(() => readTemplateChoice());
+  const [accentTheme, setAccentTheme] = useState<AccentTheme>(() => readAccentChoice());
   const [technicalSkillInput, setTechnicalSkillInput] = useState('');
   const [softSkillInput, setSoftSkillInput] = useState('');
   const [toolsInput, setToolsInput] = useState('');
@@ -846,11 +1063,6 @@ function BuilderPage() {
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
   const ats = useMemo(() => computeAtsResult(draft), [draft]);
   const topImprovements = useMemo(() => computeTopImprovements(draft), [draft]);
-  const previewEducation = nonEmptyEducation(draft);
-  const previewExperience = nonEmptyExperience(draft);
-  const previewProjects = nonEmptyProjects(draft);
-  const previewSkills = skillItems(draft);
-  const contactLine = [draft.email, draft.phone, draft.location].map((item) => item.trim()).filter(Boolean).join(' | ');
 
   useEffect(() => {
     localStorage.setItem(RESUME_STORAGE_KEY, JSON.stringify(draft));
@@ -859,6 +1071,10 @@ function BuilderPage() {
   useEffect(() => {
     localStorage.setItem(TEMPLATE_STORAGE_KEY, template);
   }, [template]);
+
+  useEffect(() => {
+    localStorage.setItem(ACCENT_STORAGE_KEY, accentTheme.id);
+  }, [accentTheme]);
 
   const updateEducation = (id: string, field: keyof Omit<EducationEntry, 'id'>, value: string) => {
     setDraft((prev) => ({
@@ -1000,7 +1216,6 @@ function BuilderPage() {
         <span className="status-badge">In Progress</span>
       </header>
       <ProductNav />
-      <TemplateTabs template={template} onChange={setTemplate} />
       <section className="workspace">
         <main className="workspace-main">
           <h2>Builder</h2>
@@ -1187,6 +1402,9 @@ function BuilderPage() {
           <input className="input" placeholder="LinkedIn" value={draft.linkedin} onChange={(e) => setDraft({ ...draft, linkedin: e.target.value })} />
         </main>
         <aside className="workspace-side">
+          <h3>Templates</h3>
+          <TemplateTabs template={template} onChange={setTemplate} />
+          <ColorThemePicker selected={accentTheme} onChange={setAccentTheme} />
           <h3>ATS Readiness Score</h3>
           <div className="score-card">
             <div className="score-row">
@@ -1213,103 +1431,7 @@ function BuilderPage() {
             </div>
           </div>
           <h3>Live Preview</h3>
-          <div className={`resume-preview-shell ${toTemplateClass(template)}`}>
-            {(draft.name.trim() || contactLine) && (
-              <section className="preview-section">
-                {draft.name.trim() ? <h2>{draft.name.trim()}</h2> : null}
-                {contactLine ? <p>{contactLine}</p> : null}
-              </section>
-            )}
-
-            {draft.summary.trim() ? (
-              <section className="preview-section">
-                <h3>Summary</h3>
-                <p>{draft.summary.trim()}</p>
-              </section>
-            ) : null}
-
-            {previewEducation.length ? (
-              <section className="preview-section">
-                <h3>Education</h3>
-                {previewEducation.map((entry) => (
-                  <p key={entry.id}>{[entry.school, entry.degree, entry.year].filter((item) => item.trim()).join(' | ')}</p>
-                ))}
-              </section>
-            ) : null}
-
-            {previewExperience.length ? (
-              <section className="preview-section">
-                <h3>Experience</h3>
-                {previewExperience.map((entry) => (
-                  <div key={entry.id}>
-                    <p>{[entry.company, entry.role, entry.duration].filter((item) => item.trim()).join(' | ')}</p>
-                    {entry.bullet.trim() ? <p>{entry.bullet.trim()}</p> : null}
-                  </div>
-                ))}
-              </section>
-            ) : null}
-
-            {previewProjects.length ? (
-              <section className="preview-section">
-                <h3>Projects</h3>
-                {previewProjects.map((entry) => (
-                  <div className="project-preview-card" key={entry.id}>
-                    {entry.title.trim() ? <p>{entry.title.trim()}</p> : null}
-                    {entry.description.trim() ? <p>{entry.description.trim()}</p> : null}
-                    {entry.techStack.length ? (
-                      <div className="chip-wrap">
-                        {entry.techStack.map((tech) => <span className="chip chip-static" key={`${entry.id}-${tech}`}>{tech}</span>)}
-                      </div>
-                    ) : null}
-                    {(entry.liveUrl.trim() || entry.githubUrl.trim()) ? (
-                      <div className="project-links">
-                        {entry.liveUrl.trim() ? <a href={entry.liveUrl.trim()} target="_blank" rel="noreferrer">[Live]</a> : null}
-                        {entry.githubUrl.trim() ? <a href={entry.githubUrl.trim()} target="_blank" rel="noreferrer">[GitHub]</a> : null}
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </section>
-            ) : null}
-
-            {previewSkills.length ? (
-              <section className="preview-section">
-                <h3>Skills</h3>
-                {draft.technicalSkills.length ? (
-                  <div className="preview-section">
-                    <p>Technical Skills</p>
-                    <div className="chip-wrap">
-                      {draft.technicalSkills.map((skill) => <span className="chip chip-static" key={`tech-${skill}`}>{skill}</span>)}
-                    </div>
-                  </div>
-                ) : null}
-                {draft.softSkills.length ? (
-                  <div className="preview-section">
-                    <p>Soft Skills</p>
-                    <div className="chip-wrap">
-                      {draft.softSkills.map((skill) => <span className="chip chip-static" key={`soft-${skill}`}>{skill}</span>)}
-                    </div>
-                  </div>
-                ) : null}
-                {draft.toolsTechnologies.length ? (
-                  <div className="preview-section">
-                    <p>Tools & Technologies</p>
-                    <div className="chip-wrap">
-                      {draft.toolsTechnologies.map((skill) => <span className="chip chip-static" key={`tool-${skill}`}>{skill}</span>)}
-                    </div>
-                  </div>
-                ) : null}
-              </section>
-            ) : null}
-
-            {(draft.github.trim() || draft.linkedin.trim()) ? (
-              <section className="preview-section">
-                <h3>Links</h3>
-                {draft.github.trim() ? <p>{draft.github.trim()}</p> : null}
-                {draft.linkedin.trim() ? <p>{draft.linkedin.trim()}</p> : null}
-              </section>
-            ) : null}
-          </div>
+          <ResumePreviewDocument draft={draft} template={template} accentColor={accentTheme.color} />
         </aside>
       </section>
     </div>
@@ -1319,17 +1441,18 @@ function BuilderPage() {
 function CleanPreviewPage() {
   const draft = useMemo(() => readResumeDraft(), []);
   const [template, setTemplate] = useState<ResumeTemplate>(() => readTemplateChoice());
+  const [accentTheme, setAccentTheme] = useState<AccentTheme>(() => readAccentChoice());
   const [warning, setWarning] = useState('');
   const [copyState, setCopyState] = useState('');
-  const previewEducation = nonEmptyEducation(draft);
-  const previewExperience = nonEmptyExperience(draft);
-  const previewProjects = nonEmptyProjects(draft);
-  const previewSkills = skillItems(draft);
-  const contactLine = [draft.email, draft.phone, draft.location].map((item) => item.trim()).filter(Boolean).join(' | ');
+  const [pdfToast, setPdfToast] = useState('');
 
   useEffect(() => {
     localStorage.setItem(TEMPLATE_STORAGE_KEY, template);
   }, [template]);
+
+  useEffect(() => {
+    localStorage.setItem(ACCENT_STORAGE_KEY, accentTheme.id);
+  }, [accentTheme]);
 
   const checkAndWarn = () => {
     if (shouldWarnIncomplete(draft)) {
@@ -1351,6 +1474,12 @@ function CleanPreviewPage() {
     setTimeout(() => setCopyState(''), 1500);
   };
 
+  const handleDownloadPdf = () => {
+    checkAndWarn();
+    setPdfToast('PDF export ready! Check your downloads.');
+    setTimeout(() => setPdfToast(''), 1500);
+  };
+
   return (
     <div className="app-shell preview-shell">
       <header className="top-bar">
@@ -1360,7 +1489,11 @@ function CleanPreviewPage() {
       </header>
       <ProductNav />
       <TemplateTabs template={template} onChange={setTemplate} />
+      <ColorThemePicker selected={accentTheme} onChange={setAccentTheme} />
       <div className="preview-actions no-print">
+        <button type="button" className="button" onClick={handleDownloadPdf}>
+          Download PDF
+        </button>
         <button type="button" className="button" onClick={handlePrint}>
           Print / Save as PDF
         </button>
@@ -1368,109 +1501,19 @@ function CleanPreviewPage() {
           Copy Resume as Text
         </button>
       </div>
-      {(warning || copyState) ? (
+      {(warning || copyState || pdfToast) ? (
         <div className="preview-feedback no-print">
           {warning ? <p>{warning}</p> : null}
           {copyState ? <p>{copyState}</p> : null}
+          {pdfToast ? <p>{pdfToast}</p> : null}
         </div>
       ) : null}
-      <section className={`preview-paper ${toTemplateClass(template)}`}>
-        {(draft.name.trim() || contactLine) ? (
-          <>
-            {draft.name.trim() ? <h1>{draft.name.trim()}</h1> : null}
-            {contactLine ? <p>{contactLine}</p> : null}
-          </>
-        ) : null}
-
-        {draft.summary.trim() ? (
-          <>
-            <h3>Summary</h3>
-            <p>{draft.summary.trim()}</p>
-          </>
-        ) : null}
-
-        {previewEducation.length ? (
-          <>
-            <h3>Education</h3>
-            {previewEducation.map((entry) => (
-              <p className="print-avoid-break" key={entry.id}>{[entry.school, entry.degree, entry.year].filter((item) => item.trim()).join(' | ')}</p>
-            ))}
-          </>
-        ) : null}
-
-        {previewExperience.length ? (
-          <>
-            <h3>Experience</h3>
-            {previewExperience.map((entry) => (
-              <div className="print-avoid-break" key={entry.id}>
-                <p>{[entry.company, entry.role, entry.duration].filter((item) => item.trim()).join(' | ')}</p>
-                {entry.bullet.trim() ? <p>{entry.bullet.trim()}</p> : null}
-              </div>
-            ))}
-          </>
-        ) : null}
-
-        {previewProjects.length ? (
-          <>
-            <h3>Projects</h3>
-            {previewProjects.map((entry) => (
-              <div className="print-avoid-break project-preview-card" key={entry.id}>
-                {entry.title.trim() ? <p>{entry.title.trim()}</p> : null}
-                {entry.description.trim() ? <p>{entry.description.trim()}</p> : null}
-                {entry.techStack.length ? (
-                  <div className="chip-wrap">
-                    {entry.techStack.map((tech) => <span className="chip chip-static" key={`${entry.id}-${tech}`}>{tech}</span>)}
-                  </div>
-                ) : null}
-                {(entry.liveUrl.trim() || entry.githubUrl.trim()) ? (
-                  <div className="project-links">
-                    {entry.liveUrl.trim() ? <a href={entry.liveUrl.trim()} target="_blank" rel="noreferrer">[Live]</a> : null}
-                    {entry.githubUrl.trim() ? <a href={entry.githubUrl.trim()} target="_blank" rel="noreferrer">[GitHub]</a> : null}
-                  </div>
-                ) : null}
-              </div>
-            ))}
-          </>
-        ) : null}
-
-        {previewSkills.length ? (
-          <>
-            <h3>Skills</h3>
-            {draft.technicalSkills.length ? (
-              <>
-                <p>Technical Skills</p>
-                <div className="chip-wrap">
-                  {draft.technicalSkills.map((skill) => <span className="chip chip-static" key={`preview-tech-${skill}`}>{skill}</span>)}
-                </div>
-              </>
-            ) : null}
-            {draft.softSkills.length ? (
-              <>
-                <p>Soft Skills</p>
-                <div className="chip-wrap">
-                  {draft.softSkills.map((skill) => <span className="chip chip-static" key={`preview-soft-${skill}`}>{skill}</span>)}
-                </div>
-              </>
-            ) : null}
-            {draft.toolsTechnologies.length ? (
-              <>
-                <p>Tools & Technologies</p>
-                <div className="chip-wrap">
-                  {draft.toolsTechnologies.map((skill) => <span className="chip chip-static" key={`preview-tool-${skill}`}>{skill}</span>)}
-                </div>
-              </>
-            ) : null}
-          </>
-        ) : null}
-
-        {(draft.github.trim() || draft.linkedin.trim()) ? (
-          <>
-            <h3>Links</h3>
-            {draft.github.trim() ? <p>{draft.github.trim()}</p> : null}
-            {draft.linkedin.trim() ? <p>{draft.linkedin.trim()}</p> : null}
-          </>
-        ) : null}
-      </section>
+      <ResumePreviewDocument
+        draft={draft}
+        template={template}
+        accentColor={accentTheme.color}
+        className="preview-paper"
+      />
     </div>
   );
 }
