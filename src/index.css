@@ -536,6 +536,63 @@ p {
   gap: var(--space-8);
 }
 
+.ats-preview-panel {
+  border: 1px solid var(--text);
+  background: var(--surface);
+  padding: var(--space-16);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  max-width: 720px;
+}
+
+.ats-circle-card {
+  position: relative;
+  width: 120px;
+  height: 120px;
+}
+
+.ats-circle {
+  width: 120px;
+  height: 120px;
+  transform: rotate(-90deg);
+}
+
+.ats-circle-track {
+  fill: none;
+  stroke: #d1d5db;
+  stroke-width: 10;
+}
+
+.ats-circle-progress {
+  fill: none;
+  stroke-width: 10;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.2s ease;
+}
+
+.ats-circle-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8);
+}
+
+.ats-red .ats-circle-progress {
+  stroke: #b91c1c;
+}
+
+.ats-amber .ats-circle-progress {
+  stroke: #b45309;
+}
+
+.ats-green .ats-circle-progress {
+  stroke: #15803d;
+}
+
 .print-avoid-break {
   break-inside: avoid;
   page-break-inside: avoid;
@@ -579,6 +636,7 @@ p {
   .color-picker,
   .preview-actions,
   .preview-feedback,
+  .ats-preview-panel,
   .proof-footer,
   .status-badge,
   .no-print {

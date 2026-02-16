@@ -313,50 +313,50 @@ const nonEmptyProjects = (draft: ResumeDraft) =>
 const skillItems = (draft: ResumeDraft) =>
   [...draft.technicalSkills, ...draft.softSkills, ...draft.toolsTechnologies];
 
-const countWords = (value: string) => value.trim().split(/\s+/).filter(Boolean).length;
-
-const hasNumericImpact = (draft: ResumeDraft) => {
-  const texts = [
-    ...nonEmptyExperience(draft).map((entry) => entry.bullet),
-    ...nonEmptyProjects(draft).map((entry) => entry.description),
-  ].join(' ');
-  return /(\d|%)/.test(texts);
-};
-
-const hasCompleteEducation = (draft: ResumeDraft) =>
-  draft.education.some((entry) => entry.school.trim() && entry.degree.trim() && entry.year.trim());
-
 const computeAtsResult = (draft: ResumeDraft): AtsResult => {
   let score = 0;
   const suggestions: string[] = [];
-  const words = countWords(draft.summary);
-  const projects = nonEmptyProjects(draft);
-  const experience = nonEmptyExperience(draft);
-  const skills = skillItems(draft);
-  const hasLink = Boolean(draft.github.trim() || draft.linkedin.trim());
+  const summary = draft.summary.trim();
+  const summaryHasActionVerb = /\b(built|led|designed|improved|implemented|created|optimized|developed|automated)\b/i.test(summary);
+  const hasExperienceWithBullet = nonEmptyExperience(draft).some((entry) => entry.bullet.trim().length > 0);
+  const hasEducation = nonEmptyEducation(draft).length > 0;
+  const totalSkills = skillItems(draft).length;
+  const hasProject = nonEmptyProjects(draft).length > 0;
 
-  if (words >= 40 && words <= 120) score += 15;
-  else suggestions.push('Write a stronger summary (40-120 words).');
+  if (draft.name.trim()) score += 10;
+  else suggestions.push('Add your full name (+10 points).');
 
-  if (projects.length >= 2) score += 10;
-  else suggestions.push('Add at least 2 projects.');
+  if (draft.email.trim()) score += 10;
+  else suggestions.push('Add an email address (+10 points).');
 
-  if (experience.length >= 1) score += 10;
-  else suggestions.push('Add at least 1 experience entry.');
+  if (summary.length > 50) score += 10;
+  else suggestions.push('Add a professional summary (+10 points).');
 
-  if (skills.length >= 8) score += 10;
-  else suggestions.push('Add more skills (target 8+).');
+  if (hasExperienceWithBullet) score += 15;
+  else suggestions.push('Add an experience entry with bullet impact (+15 points).');
 
-  if (hasLink) score += 10;
-  else suggestions.push('Add GitHub or LinkedIn link.');
+  if (hasEducation) score += 10;
+  else suggestions.push('Add at least one education entry (+10 points).');
 
-  if (hasNumericImpact(draft)) score += 15;
-  else suggestions.push('Add measurable impact (numbers) in bullets.');
+  if (totalSkills >= 5) score += 10;
+  else suggestions.push('Add at least 5 skills (+10 points).');
 
-  if (hasCompleteEducation(draft)) score += 10;
-  else suggestions.push('Complete all education fields.');
+  if (hasProject) score += 10;
+  else suggestions.push('Add at least one project (+10 points).');
 
-  return { score: Math.min(100, score), suggestions: suggestions.slice(0, 3) };
+  if (draft.phone.trim()) score += 5;
+  else suggestions.push('Add your phone number (+5 points).');
+
+  if (draft.linkedin.trim()) score += 5;
+  else suggestions.push('Add your LinkedIn URL (+5 points).');
+
+  if (draft.github.trim()) score += 5;
+  else suggestions.push('Add your GitHub URL (+5 points).');
+
+  if (summaryHasActionVerb) score += 10;
+  else suggestions.push('Use action verbs in summary (+10 points).');
+
+  return { score: Math.min(100, score), suggestions };
 };
 
 const readTemplateChoice = (): ResumeTemplate => {
@@ -388,15 +388,7 @@ const getBulletGuidance = (text: string) => {
   return guidance;
 };
 
-const computeTopImprovements = (draft: ResumeDraft) => {
-  const improvements: string[] = [];
-  if (nonEmptyProjects(draft).length < 2) improvements.push('Add at least 2 projects.');
-  if (!hasNumericImpact(draft)) improvements.push('Add measurable impact (numbers).');
-  if (countWords(draft.summary) < 40) improvements.push('Expand summary to at least 40 words.');
-  if (skillItems(draft).length < 8) improvements.push('Add more skills (target 8+).');
-  if (nonEmptyExperience(draft).length < 1) improvements.push('Add internship or project work in experience.');
-  return improvements.slice(0, 3);
-};
+const computeTopImprovements = (draft: ResumeDraft) => computeAtsResult(draft).suggestions.slice(0, 3);
 
 const shouldWarnIncomplete = (draft: ResumeDraft) => {
   const hasName = Boolean(draft.name.trim());
@@ -891,6 +883,41 @@ function ColorThemePicker({ selected, onChange }: AccentPickerProps) {
           aria-label={theme.label}
         />
       ))}
+    </div>
+  );
+}
+
+function AtsScoreCircle({ score }: { score: number }) {
+  const circumference = 2 * Math.PI * 45;
+  const offset = circumference - (score / 100) * circumference;
+  let toneClass = 'ats-red';
+  let label = 'Needs Work';
+  if (score >= 71) {
+    toneClass = 'ats-green';
+    label = 'Strong Resume';
+  } else if (score >= 41) {
+    toneClass = 'ats-amber';
+    label = 'Getting There';
+  }
+
+  return (
+    <div className={`ats-circle-card ${toneClass}`}>
+      <svg className="ats-circle" viewBox="0 0 120 120" aria-label="ATS Score">
+        <circle className="ats-circle-track" cx="60" cy="60" r="45" />
+        <circle
+          className="ats-circle-progress"
+          cx="60"
+          cy="60"
+          r="45"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+        />
+      </svg>
+      <div className="ats-circle-center">
+        <strong>{score}</strong>
+        <span>/ 100</span>
+        <p>{label}</p>
+      </div>
     </div>
   );
 }
@@ -1439,12 +1466,13 @@ function BuilderPage() {
 }
 
 function CleanPreviewPage() {
-  const draft = useMemo(() => readResumeDraft(), []);
+  const [draft, setDraft] = useState<ResumeDraft>(() => readResumeDraft());
   const [template, setTemplate] = useState<ResumeTemplate>(() => readTemplateChoice());
   const [accentTheme, setAccentTheme] = useState<AccentTheme>(() => readAccentChoice());
   const [warning, setWarning] = useState('');
   const [copyState, setCopyState] = useState('');
   const [pdfToast, setPdfToast] = useState('');
+  const ats = useMemo(() => computeAtsResult(draft), [draft]);
 
   useEffect(() => {
     localStorage.setItem(TEMPLATE_STORAGE_KEY, template);
@@ -1453,6 +1481,22 @@ function CleanPreviewPage() {
   useEffect(() => {
     localStorage.setItem(ACCENT_STORAGE_KEY, accentTheme.id);
   }, [accentTheme]);
+
+  useEffect(() => {
+    const reloadDraft = () => setDraft(readResumeDraft());
+    const onStorage = (event: StorageEvent) => {
+      if (!event.key || event.key === RESUME_STORAGE_KEY) reloadDraft();
+    };
+
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('focus', reloadDraft);
+    document.addEventListener('visibilitychange', reloadDraft);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('focus', reloadDraft);
+      document.removeEventListener('visibilitychange', reloadDraft);
+    };
+  }, []);
 
   const checkAndWarn = () => {
     if (shouldWarnIncomplete(draft)) {
@@ -1500,6 +1544,17 @@ function CleanPreviewPage() {
         <button type="button" className="button" onClick={handleCopyText}>
           Copy Resume as Text
         </button>
+      </div>
+      <div className="ats-preview-panel no-print">
+        <h3>ATS Resume Score</h3>
+        <AtsScoreCircle score={ats.score} />
+        <div className="suggestions">
+          {ats.suggestions.length ? (
+            ats.suggestions.map((item) => <p key={item}>{item}</p>)
+          ) : (
+            <p>Great work. Your resume is well balanced.</p>
+          )}
+        </div>
       </div>
       {(warning || copyState || pdfToast) ? (
         <div className="preview-feedback no-print">
