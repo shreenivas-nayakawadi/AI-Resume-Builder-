@@ -336,6 +336,75 @@ const computeTopImprovements = (draft: ResumeDraft) => {
   return improvements.slice(0, 3);
 };
 
+const shouldWarnIncomplete = (draft: ResumeDraft) => {
+  const hasName = Boolean(draft.name.trim());
+  const hasProjectOrExperience = nonEmptyProjects(draft).length > 0 || nonEmptyExperience(draft).length > 0;
+  return !hasName || !hasProjectOrExperience;
+};
+
+const toPlainTextResume = (draft: ResumeDraft) => {
+  const lines: string[] = [];
+  const contact = [draft.email, draft.phone, draft.location].map((item) => item.trim()).filter(Boolean).join(' | ');
+  const education = nonEmptyEducation(draft);
+  const experience = nonEmptyExperience(draft);
+  const projects = nonEmptyProjects(draft);
+  const skills = skillItems(draft);
+
+  lines.push('Name');
+  lines.push(draft.name.trim() || '-');
+  lines.push('');
+
+  lines.push('Contact');
+  lines.push(contact || '-');
+  lines.push('');
+
+  if (draft.summary.trim()) {
+    lines.push('Summary');
+    lines.push(draft.summary.trim());
+    lines.push('');
+  }
+
+  if (education.length) {
+    lines.push('Education');
+    education.forEach((entry) => {
+      lines.push(`- ${[entry.school, entry.degree, entry.year].filter((item) => item.trim()).join(' | ')}`);
+    });
+    lines.push('');
+  }
+
+  if (experience.length) {
+    lines.push('Experience');
+    experience.forEach((entry) => {
+      lines.push(`- ${[entry.company, entry.role, entry.duration].filter((item) => item.trim()).join(' | ')}`);
+      if (entry.bullet.trim()) lines.push(`  ${entry.bullet.trim()}`);
+    });
+    lines.push('');
+  }
+
+  if (projects.length) {
+    lines.push('Projects');
+    projects.forEach((entry) => {
+      lines.push(`- ${entry.title.trim() || 'Project'}`);
+      if (entry.description.trim()) lines.push(`  ${entry.description.trim()}`);
+    });
+    lines.push('');
+  }
+
+  if (skills.length) {
+    lines.push('Skills');
+    lines.push(skills.join(', '));
+    lines.push('');
+  }
+
+  if (draft.github.trim() || draft.linkedin.trim()) {
+    lines.push('Links');
+    if (draft.github.trim()) lines.push(draft.github.trim());
+    if (draft.linkedin.trim()) lines.push(draft.linkedin.trim());
+  }
+
+  return lines.join('\n').trim();
+};
+
 type ShellProps = {
   currentStep: number | null;
   children: ReactNode;
@@ -980,6 +1049,8 @@ function BuilderPage() {
 function CleanPreviewPage() {
   const draft = useMemo(() => readResumeDraft(), []);
   const [template, setTemplate] = useState<ResumeTemplate>(() => readTemplateChoice());
+  const [warning, setWarning] = useState('');
+  const [copyState, setCopyState] = useState('');
   const previewEducation = nonEmptyEducation(draft);
   const previewExperience = nonEmptyExperience(draft);
   const previewProjects = nonEmptyProjects(draft);
@@ -990,6 +1061,26 @@ function CleanPreviewPage() {
     localStorage.setItem(TEMPLATE_STORAGE_KEY, template);
   }, [template]);
 
+  const checkAndWarn = () => {
+    if (shouldWarnIncomplete(draft)) {
+      setWarning('Your resume may look incomplete.');
+    } else {
+      setWarning('');
+    }
+  };
+
+  const handlePrint = () => {
+    checkAndWarn();
+    window.print();
+  };
+
+  const handleCopyText = async () => {
+    checkAndWarn();
+    await navigator.clipboard.writeText(toPlainTextResume(draft));
+    setCopyState('Resume text copied');
+    setTimeout(() => setCopyState(''), 1500);
+  };
+
   return (
     <div className="app-shell preview-shell">
       <header className="top-bar">
@@ -999,6 +1090,20 @@ function CleanPreviewPage() {
       </header>
       <ProductNav />
       <TemplateTabs template={template} onChange={setTemplate} />
+      <div className="preview-actions no-print">
+        <button type="button" className="button" onClick={handlePrint}>
+          Print / Save as PDF
+        </button>
+        <button type="button" className="button" onClick={handleCopyText}>
+          Copy Resume as Text
+        </button>
+      </div>
+      {(warning || copyState) ? (
+        <div className="preview-feedback no-print">
+          {warning ? <p>{warning}</p> : null}
+          {copyState ? <p>{copyState}</p> : null}
+        </div>
+      ) : null}
       <section className={`preview-paper ${toTemplateClass(template)}`}>
         {(draft.name.trim() || contactLine) ? (
           <>
@@ -1018,7 +1123,7 @@ function CleanPreviewPage() {
           <>
             <h3>Education</h3>
             {previewEducation.map((entry) => (
-              <p key={entry.id}>{[entry.school, entry.degree, entry.year].filter((item) => item.trim()).join(' | ')}</p>
+              <p className="print-avoid-break" key={entry.id}>{[entry.school, entry.degree, entry.year].filter((item) => item.trim()).join(' | ')}</p>
             ))}
           </>
         ) : null}
@@ -1027,7 +1132,7 @@ function CleanPreviewPage() {
           <>
             <h3>Experience</h3>
             {previewExperience.map((entry) => (
-              <div key={entry.id}>
+              <div className="print-avoid-break" key={entry.id}>
                 <p>{[entry.company, entry.role, entry.duration].filter((item) => item.trim()).join(' | ')}</p>
                 {entry.bullet.trim() ? <p>{entry.bullet.trim()}</p> : null}
               </div>
@@ -1039,7 +1144,7 @@ function CleanPreviewPage() {
           <>
             <h3>Projects</h3>
             {previewProjects.map((entry) => (
-              <div key={entry.id}>
+              <div className="print-avoid-break" key={entry.id}>
                 {entry.title.trim() ? <p>{entry.title.trim()}</p> : null}
                 {entry.description.trim() ? <p>{entry.description.trim()}</p> : null}
               </div>
