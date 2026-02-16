@@ -44,6 +44,9 @@ type ProjectEntry = {
   id: string;
   title: string;
   description: string;
+  techStack: string[];
+  liveUrl: string;
+  githubUrl: string;
 };
 
 type ResumeDraft = {
@@ -55,7 +58,9 @@ type ResumeDraft = {
   education: EducationEntry[];
   experience: ExperienceEntry[];
   projects: ProjectEntry[];
-  skills: string;
+  technicalSkills: string[];
+  softSkills: string[];
+  toolsTechnologies: string[];
   github: string;
   linkedin: string;
 };
@@ -132,6 +137,9 @@ const NAV_ITEMS = [
 ];
 const TEMPLATE_OPTIONS: ResumeTemplate[] = ['Classic', 'Modern', 'Minimal'];
 const ACTION_VERBS = ['Built', 'Developed', 'Designed', 'Implemented', 'Led', 'Improved', 'Created', 'Optimized', 'Automated'];
+const TECHNICAL_SUGGESTIONS = ['TypeScript', 'React', 'Node.js', 'PostgreSQL', 'GraphQL'];
+const SOFT_SUGGESTIONS = ['Team Leadership', 'Problem Solving'];
+const TOOLS_SUGGESTIONS = ['Git', 'Docker', 'AWS'];
 
 type AtsResult = {
   score: number;
@@ -174,7 +182,14 @@ const getProofLinks = (): ProofLinks => {
 
 const createEducationEntry = (): EducationEntry => ({ id: crypto.randomUUID(), school: '', degree: '', year: '' });
 const createExperienceEntry = (): ExperienceEntry => ({ id: crypto.randomUUID(), company: '', role: '', duration: '', bullet: '' });
-const createProjectEntry = (): ProjectEntry => ({ id: crypto.randomUUID(), title: '', description: '' });
+const createProjectEntry = (): ProjectEntry => ({
+  id: crypto.randomUUID(),
+  title: '',
+  description: '',
+  techStack: [],
+  liveUrl: '',
+  githubUrl: '',
+});
 
 const toSafeString = (value: unknown) => (typeof value === 'string' ? value : '');
 
@@ -190,7 +205,9 @@ const readResumeDraft = (): ResumeDraft => {
       education: [createEducationEntry()],
       experience: [createExperienceEntry()],
       projects: [createProjectEntry()],
-      skills: '',
+      technicalSkills: [],
+      softSkills: [],
+      toolsTechnologies: [],
       github: '',
       linkedin: '',
     };
@@ -227,8 +244,24 @@ const readResumeDraft = (): ResumeDraft => {
         id: toSafeString(item.id) || crypto.randomUUID(),
         title: toSafeString(item.title),
         description: toSafeString(item.description),
+        techStack: Array.isArray(item.techStack)
+          ? item.techStack.map((tech) => toSafeString(tech)).filter(Boolean)
+          : [],
+        liveUrl: toSafeString(item.liveUrl),
+        githubUrl: toSafeString(item.githubUrl),
       }))
     : [];
+
+  const parseSkillArray = (value: unknown) =>
+    Array.isArray(value) ? value.map((item) => toSafeString(item).trim()).filter(Boolean) : [];
+  const technicalSkills = parseSkillArray(raw.technicalSkills);
+  const softSkills = parseSkillArray(raw.softSkills);
+  const toolsTechnologies = parseSkillArray(raw.toolsTechnologies);
+
+  const legacySkills = toSafeString(raw.skills)
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
 
   return {
     name: toSafeString(raw.name),
@@ -239,7 +272,9 @@ const readResumeDraft = (): ResumeDraft => {
     education: education.length ? education : [createEducationEntry()],
     experience: experience.length ? experience : [createExperienceEntry()],
     projects: projects.length ? projects : [createProjectEntry()],
-    skills: toSafeString(raw.skills),
+    technicalSkills: technicalSkills.length ? technicalSkills : legacySkills,
+    softSkills,
+    toolsTechnologies,
     github: toSafeString(raw.github),
     linkedin: toSafeString(raw.linkedin),
   };
@@ -252,9 +287,17 @@ const nonEmptyExperience = (draft: ResumeDraft) =>
   draft.experience.filter((entry) => entry.company.trim() || entry.role.trim() || entry.duration.trim() || entry.bullet.trim());
 
 const nonEmptyProjects = (draft: ResumeDraft) =>
-  draft.projects.filter((entry) => entry.title.trim() || entry.description.trim());
+  draft.projects.filter(
+    (entry) =>
+      entry.title.trim() ||
+      entry.description.trim() ||
+      entry.techStack.length > 0 ||
+      entry.liveUrl.trim() ||
+      entry.githubUrl.trim(),
+  );
 
-const skillItems = (draft: ResumeDraft) => draft.skills.split(',').map((item) => item.trim()).filter(Boolean);
+const skillItems = (draft: ResumeDraft) =>
+  [...draft.technicalSkills, ...draft.softSkills, ...draft.toolsTechnologies];
 
 const countWords = (value: string) => value.trim().split(/\s+/).filter(Boolean).length;
 
@@ -386,13 +429,18 @@ const toPlainTextResume = (draft: ResumeDraft) => {
     projects.forEach((entry) => {
       lines.push(`- ${entry.title.trim() || 'Project'}`);
       if (entry.description.trim()) lines.push(`  ${entry.description.trim()}`);
+      if (entry.techStack.length) lines.push(`  Tech Stack: ${entry.techStack.join(', ')}`);
+      if (entry.liveUrl.trim()) lines.push(`  Live: ${entry.liveUrl.trim()}`);
+      if (entry.githubUrl.trim()) lines.push(`  GitHub: ${entry.githubUrl.trim()}`);
     });
     lines.push('');
   }
 
   if (skills.length) {
     lines.push('Skills');
-    lines.push(skills.join(', '));
+    if (draft.technicalSkills.length) lines.push(`Technical Skills: ${draft.technicalSkills.join(', ')}`);
+    if (draft.softSkills.length) lines.push(`Soft Skills: ${draft.softSkills.join(', ')}`);
+    if (draft.toolsTechnologies.length) lines.push(`Tools & Technologies: ${draft.toolsTechnologies.join(', ')}`);
     lines.push('');
   }
 
@@ -790,6 +838,12 @@ function HomePage() {
 function BuilderPage() {
   const [draft, setDraft] = useState<ResumeDraft>(() => readResumeDraft());
   const [template, setTemplate] = useState<ResumeTemplate>(() => readTemplateChoice());
+  const [technicalSkillInput, setTechnicalSkillInput] = useState('');
+  const [softSkillInput, setSoftSkillInput] = useState('');
+  const [toolsInput, setToolsInput] = useState('');
+  const [isSuggestingSkills, setIsSuggestingSkills] = useState(false);
+  const [projectTechInput, setProjectTechInput] = useState<Record<string, string>>({});
+  const [openProjectId, setOpenProjectId] = useState<string | null>(null);
   const ats = useMemo(() => computeAtsResult(draft), [draft]);
   const topImprovements = useMemo(() => computeTopImprovements(draft), [draft]);
   const previewEducation = nonEmptyEducation(draft);
@@ -820,7 +874,7 @@ function BuilderPage() {
     }));
   };
 
-  const updateProject = (id: string, field: keyof Omit<ProjectEntry, 'id'>, value: string) => {
+  const updateProject = (id: string, field: 'title' | 'description' | 'liveUrl' | 'githubUrl', value: string) => {
     setDraft((prev) => ({
       ...prev,
       projects: prev.projects.map((entry) => (entry.id === id ? { ...entry, [field]: value } : entry)),
@@ -851,17 +905,91 @@ function BuilderPage() {
           id: crypto.randomUUID(),
           title: 'Placement Platform',
           description: 'Built modular prep workflow UI and reduced task completion time by 28%.',
+          techStack: ['React', 'TypeScript', 'Node.js'],
+          liveUrl: 'https://example.com/placement-platform',
+          githubUrl: 'https://github.com/shreenivas-nayakawadi/placement-platform',
         },
         {
           id: crypto.randomUUID(),
           title: 'Resume Analyzer',
           description: 'Implemented deterministic checks that lifted profile completeness to 90%.',
+          techStack: ['TypeScript', 'GraphQL', 'PostgreSQL'],
+          liveUrl: '',
+          githubUrl: 'https://github.com/shreenivas-nayakawadi/resume-analyzer',
         },
       ],
-      skills: 'React, TypeScript, CSS, Node.js, HTML, REST APIs, Git, Testing',
+      technicalSkills: ['React', 'TypeScript', 'Node.js', 'PostgreSQL', 'GraphQL'],
+      softSkills: ['Team Leadership', 'Problem Solving'],
+      toolsTechnologies: ['Git', 'Docker', 'AWS'],
       github: 'https://github.com/shreenivas-nayakawadi',
       linkedin: 'https://linkedin.com/in/shreenivas',
     });
+  };
+
+  const addUniqueChip = (existing: string[], value: string) => {
+    const normalized = value.trim();
+    if (!normalized) return existing;
+    if (existing.some((item) => item.toLowerCase() === normalized.toLowerCase())) return existing;
+    return [...existing, normalized];
+  };
+
+  const removeChip = (existing: string[], value: string) =>
+    existing.filter((item) => item.toLowerCase() !== value.toLowerCase());
+
+  const addSkillChip = (category: 'technicalSkills' | 'softSkills' | 'toolsTechnologies', rawValue: string) => {
+    setDraft((prev) => ({ ...prev, [category]: addUniqueChip(prev[category], rawValue) }));
+  };
+
+  const suggestSkills = () => {
+    setIsSuggestingSkills(true);
+    window.setTimeout(() => {
+      setDraft((prev) => ({
+        ...prev,
+        technicalSkills: TECHNICAL_SUGGESTIONS.reduce((list, skill) => addUniqueChip(list, skill), prev.technicalSkills),
+        softSkills: SOFT_SUGGESTIONS.reduce((list, skill) => addUniqueChip(list, skill), prev.softSkills),
+        toolsTechnologies: TOOLS_SUGGESTIONS.reduce((list, skill) => addUniqueChip(list, skill), prev.toolsTechnologies),
+      }));
+      setIsSuggestingSkills(false);
+    }, 1000);
+  };
+
+  const addProjectTechChip = (projectId: string, rawValue: string) => {
+    const normalized = rawValue.trim();
+    if (!normalized) return;
+    setDraft((prev) => ({
+      ...prev,
+      projects: prev.projects.map((entry) =>
+        entry.id === projectId ? { ...entry, techStack: addUniqueChip(entry.techStack, normalized) } : entry,
+      ),
+    }));
+  };
+
+  const removeProjectTechChip = (projectId: string, value: string) => {
+    setDraft((prev) => ({
+      ...prev,
+      projects: prev.projects.map((entry) =>
+        entry.id === projectId ? { ...entry, techStack: removeChip(entry.techStack, value) } : entry,
+      ),
+    }));
+  };
+
+  const addProject = () => {
+    const newProject = createProjectEntry();
+    setDraft((prev) => ({ ...prev, projects: [...prev.projects, newProject] }));
+    setOpenProjectId(newProject.id);
+  };
+
+  const deleteProject = (projectId: string) => {
+    setDraft((prev) => ({
+      ...prev,
+      projects: prev.projects.length > 1 ? prev.projects.filter((entry) => entry.id !== projectId) : [createProjectEntry()],
+    }));
+    setProjectTechInput((prev) => {
+      const next = { ...prev };
+      delete next[projectId];
+      return next;
+    });
+    if (openProjectId === projectId) setOpenProjectId(null);
   };
 
   return (
@@ -925,26 +1053,134 @@ function BuilderPage() {
             Add Experience
           </button>
 
-          <h3>Projects</h3>
-          {draft.projects.map((entry) => (
-            <div key={entry.id} className="entry-card">
-              <input className="input" placeholder="Title" value={entry.title} onChange={(e) => updateProject(entry.id, 'title', e.target.value)} />
-              <textarea className="textarea" placeholder="Description" value={entry.description} onChange={(e) => updateProject(entry.id, 'description', e.target.value)} />
-              {getBulletGuidance(entry.description).map((hint) => (
-                <p key={`${entry.id}-${hint}`} className="inline-guidance">{hint}</p>
-              ))}
-            </div>
-          ))}
-          <button
-            type="button"
-            className="button"
-            onClick={() => setDraft((prev) => ({ ...prev, projects: [...prev.projects, createProjectEntry()] }))}
-          >
-            Add Project
+          <h3>Skills</h3>
+          <button type="button" className="button" onClick={suggestSkills} disabled={isSuggestingSkills}>
+            {isSuggestingSkills ? 'Suggesting...' : '✨ Suggest Skills'}
           </button>
 
-          <h3>Skills</h3>
-          <input className="input" placeholder="Comma-separated skills" value={draft.skills} onChange={(e) => setDraft({ ...draft, skills: e.target.value })} />
+          <div className="entry-card">
+            <h3>Technical Skills ({draft.technicalSkills.length})</h3>
+            <input
+              className="input"
+              placeholder="Type skill and press Enter"
+              value={technicalSkillInput}
+              onChange={(e) => setTechnicalSkillInput(e.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return;
+                event.preventDefault();
+                addSkillChip('technicalSkills', technicalSkillInput);
+                setTechnicalSkillInput('');
+              }}
+            />
+            <div className="chip-wrap">
+              {draft.technicalSkills.map((skill) => (
+                <button key={skill} type="button" className="chip" onClick={() => setDraft((prev) => ({ ...prev, technicalSkills: removeChip(prev.technicalSkills, skill) }))}>
+                  {skill} x
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="entry-card">
+            <h3>Soft Skills ({draft.softSkills.length})</h3>
+            <input
+              className="input"
+              placeholder="Type skill and press Enter"
+              value={softSkillInput}
+              onChange={(e) => setSoftSkillInput(e.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return;
+                event.preventDefault();
+                addSkillChip('softSkills', softSkillInput);
+                setSoftSkillInput('');
+              }}
+            />
+            <div className="chip-wrap">
+              {draft.softSkills.map((skill) => (
+                <button key={skill} type="button" className="chip" onClick={() => setDraft((prev) => ({ ...prev, softSkills: removeChip(prev.softSkills, skill) }))}>
+                  {skill} x
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="entry-card">
+            <h3>Tools & Technologies ({draft.toolsTechnologies.length})</h3>
+            <input
+              className="input"
+              placeholder="Type tool and press Enter"
+              value={toolsInput}
+              onChange={(e) => setToolsInput(e.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return;
+                event.preventDefault();
+                addSkillChip('toolsTechnologies', toolsInput);
+                setToolsInput('');
+              }}
+            />
+            <div className="chip-wrap">
+              {draft.toolsTechnologies.map((skill) => (
+                <button key={skill} type="button" className="chip" onClick={() => setDraft((prev) => ({ ...prev, toolsTechnologies: removeChip(prev.toolsTechnologies, skill) }))}>
+                  {skill} x
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <h3>Projects</h3>
+          <button type="button" className="button" onClick={addProject}>Add Project</button>
+          {draft.projects.map((entry, index) => {
+            const isOpen = openProjectId === entry.id || (openProjectId === null && index === 0);
+            return (
+              <div key={entry.id} className="entry-card">
+                <div className="project-header-row">
+                  <button type="button" className="button" onClick={() => setOpenProjectId(isOpen ? null : entry.id)}>
+                    {entry.title.trim() || `Project ${index + 1}`}
+                  </button>
+                  <button type="button" className="button" onClick={() => deleteProject(entry.id)}>
+                    Delete
+                  </button>
+                </div>
+                {isOpen ? (
+                  <>
+                    <input className="input" placeholder="Project Title" value={entry.title} onChange={(e) => updateProject(entry.id, 'title', e.target.value)} />
+                    <textarea
+                      className="textarea"
+                      placeholder="Description"
+                      maxLength={200}
+                      value={entry.description}
+                      onChange={(e) => updateProject(entry.id, 'description', e.target.value)}
+                    />
+                    <p className="inline-guidance">{entry.description.length}/200</p>
+                    {getBulletGuidance(entry.description).map((hint) => (
+                      <p key={`${entry.id}-${hint}`} className="inline-guidance">{hint}</p>
+                    ))}
+                    <input
+                      className="input"
+                      placeholder="Add tech and press Enter"
+                      value={projectTechInput[entry.id] ?? ''}
+                      onChange={(e) => setProjectTechInput((prev) => ({ ...prev, [entry.id]: e.target.value }))}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Enter') return;
+                        event.preventDefault();
+                        addProjectTechChip(entry.id, projectTechInput[entry.id] ?? '');
+                        setProjectTechInput((prev) => ({ ...prev, [entry.id]: '' }));
+                      }}
+                    />
+                    <div className="chip-wrap">
+                      {entry.techStack.map((tech) => (
+                        <button key={`${entry.id}-${tech}`} type="button" className="chip" onClick={() => removeProjectTechChip(entry.id, tech)}>
+                          {tech} x
+                        </button>
+                      ))}
+                    </div>
+                    <input className="input" placeholder="Live URL (optional)" value={entry.liveUrl} onChange={(e) => updateProject(entry.id, 'liveUrl', e.target.value)} />
+                    <input className="input" placeholder="GitHub URL (optional)" value={entry.githubUrl} onChange={(e) => updateProject(entry.id, 'githubUrl', e.target.value)} />
+                  </>
+                ) : null}
+              </div>
+            );
+          })}
 
           <h3>Links</h3>
           <input className="input" placeholder="GitHub" value={draft.github} onChange={(e) => setDraft({ ...draft, github: e.target.value })} />
@@ -1017,9 +1253,20 @@ function BuilderPage() {
               <section className="preview-section">
                 <h3>Projects</h3>
                 {previewProjects.map((entry) => (
-                  <div key={entry.id}>
+                  <div className="project-preview-card" key={entry.id}>
                     {entry.title.trim() ? <p>{entry.title.trim()}</p> : null}
                     {entry.description.trim() ? <p>{entry.description.trim()}</p> : null}
+                    {entry.techStack.length ? (
+                      <div className="chip-wrap">
+                        {entry.techStack.map((tech) => <span className="chip chip-static" key={`${entry.id}-${tech}`}>{tech}</span>)}
+                      </div>
+                    ) : null}
+                    {(entry.liveUrl.trim() || entry.githubUrl.trim()) ? (
+                      <div className="project-links">
+                        {entry.liveUrl.trim() ? <a href={entry.liveUrl.trim()} target="_blank" rel="noreferrer">[Live]</a> : null}
+                        {entry.githubUrl.trim() ? <a href={entry.githubUrl.trim()} target="_blank" rel="noreferrer">[GitHub]</a> : null}
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </section>
@@ -1028,7 +1275,30 @@ function BuilderPage() {
             {previewSkills.length ? (
               <section className="preview-section">
                 <h3>Skills</h3>
-                <p>{previewSkills.join(', ')}</p>
+                {draft.technicalSkills.length ? (
+                  <div className="preview-section">
+                    <p>Technical Skills</p>
+                    <div className="chip-wrap">
+                      {draft.technicalSkills.map((skill) => <span className="chip chip-static" key={`tech-${skill}`}>{skill}</span>)}
+                    </div>
+                  </div>
+                ) : null}
+                {draft.softSkills.length ? (
+                  <div className="preview-section">
+                    <p>Soft Skills</p>
+                    <div className="chip-wrap">
+                      {draft.softSkills.map((skill) => <span className="chip chip-static" key={`soft-${skill}`}>{skill}</span>)}
+                    </div>
+                  </div>
+                ) : null}
+                {draft.toolsTechnologies.length ? (
+                  <div className="preview-section">
+                    <p>Tools & Technologies</p>
+                    <div className="chip-wrap">
+                      {draft.toolsTechnologies.map((skill) => <span className="chip chip-static" key={`tool-${skill}`}>{skill}</span>)}
+                    </div>
+                  </div>
+                ) : null}
               </section>
             ) : null}
 
@@ -1144,9 +1414,20 @@ function CleanPreviewPage() {
           <>
             <h3>Projects</h3>
             {previewProjects.map((entry) => (
-              <div className="print-avoid-break" key={entry.id}>
+              <div className="print-avoid-break project-preview-card" key={entry.id}>
                 {entry.title.trim() ? <p>{entry.title.trim()}</p> : null}
                 {entry.description.trim() ? <p>{entry.description.trim()}</p> : null}
+                {entry.techStack.length ? (
+                  <div className="chip-wrap">
+                    {entry.techStack.map((tech) => <span className="chip chip-static" key={`${entry.id}-${tech}`}>{tech}</span>)}
+                  </div>
+                ) : null}
+                {(entry.liveUrl.trim() || entry.githubUrl.trim()) ? (
+                  <div className="project-links">
+                    {entry.liveUrl.trim() ? <a href={entry.liveUrl.trim()} target="_blank" rel="noreferrer">[Live]</a> : null}
+                    {entry.githubUrl.trim() ? <a href={entry.githubUrl.trim()} target="_blank" rel="noreferrer">[GitHub]</a> : null}
+                  </div>
+                ) : null}
               </div>
             ))}
           </>
@@ -1155,7 +1436,30 @@ function CleanPreviewPage() {
         {previewSkills.length ? (
           <>
             <h3>Skills</h3>
-            <p>{previewSkills.join(', ')}</p>
+            {draft.technicalSkills.length ? (
+              <>
+                <p>Technical Skills</p>
+                <div className="chip-wrap">
+                  {draft.technicalSkills.map((skill) => <span className="chip chip-static" key={`preview-tech-${skill}`}>{skill}</span>)}
+                </div>
+              </>
+            ) : null}
+            {draft.softSkills.length ? (
+              <>
+                <p>Soft Skills</p>
+                <div className="chip-wrap">
+                  {draft.softSkills.map((skill) => <span className="chip chip-static" key={`preview-soft-${skill}`}>{skill}</span>)}
+                </div>
+              </>
+            ) : null}
+            {draft.toolsTechnologies.length ? (
+              <>
+                <p>Tools & Technologies</p>
+                <div className="chip-wrap">
+                  {draft.toolsTechnologies.map((skill) => <span className="chip chip-static" key={`preview-tool-${skill}`}>{skill}</span>)}
+                </div>
+              </>
+            ) : null}
           </>
         ) : null}
 

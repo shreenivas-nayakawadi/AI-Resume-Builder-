@@ -139,8 +139,33 @@ p {
   padding: var(--space-16);
 }
 
+.project-header-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-8);
+}
+
 .inline-guidance {
   line-height: 1.5;
+}
+
+.chip-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.chip {
+  border: 1px solid var(--text);
+  background: var(--bg);
+  color: var(--text);
+  padding: var(--space-8) var(--space-16);
+  font: inherit;
+  cursor: pointer;
+}
+
+.chip-static {
+  cursor: default;
 }
 
 .label {
@@ -269,6 +294,23 @@ p {
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
+}
+
+.project-preview-card {
+  border: 1px solid var(--text);
+  padding: var(--space-16);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.project-links {
+  display: flex;
+  gap: var(--space-8);
+}
+
+.project-links a {
+  color: var(--text);
 }
 
 .score-card {
