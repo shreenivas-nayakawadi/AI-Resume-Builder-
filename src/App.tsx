@@ -37,6 +37,7 @@ type ExperienceEntry = {
   company: string;
   role: string;
   duration: string;
+  bullet: string;
 };
 
 type ProjectEntry = {
@@ -120,11 +121,17 @@ const STEPS: BuildStep[] = [
 
 const PROOF_ROUTE = '/rb/proof';
 const PROOF_LINKS_KEY = 'rb_proof_links';
+const RESUME_STORAGE_KEY = 'resumeBuilderData';
 const NAV_ITEMS = [
   { label: 'Builder', to: '/builder' },
   { label: 'Preview', to: '/preview' },
   { label: 'Proof', to: '/proof' },
 ];
+
+type AtsResult = {
+  score: number;
+  suggestions: string[];
+};
 
 const getArtifactKey = (stepNumber: number) => `rb_step_${stepNumber}_artifact`;
 
@@ -158,6 +165,136 @@ const getProofLinks = (): ProofLinks => {
       deploy: '',
     }
   );
+};
+
+const createEducationEntry = (): EducationEntry => ({ id: crypto.randomUUID(), school: '', degree: '', year: '' });
+const createExperienceEntry = (): ExperienceEntry => ({ id: crypto.randomUUID(), company: '', role: '', duration: '', bullet: '' });
+const createProjectEntry = (): ProjectEntry => ({ id: crypto.randomUUID(), title: '', description: '' });
+
+const toSafeString = (value: unknown) => (typeof value === 'string' ? value : '');
+
+const readResumeDraft = (): ResumeDraft => {
+  const parsed = parseJson<unknown>(localStorage.getItem(RESUME_STORAGE_KEY));
+  if (!parsed || typeof parsed !== 'object') {
+    return {
+      name: '',
+      email: '',
+      phone: '',
+      location: '',
+      summary: '',
+      education: [createEducationEntry()],
+      experience: [createExperienceEntry()],
+      projects: [createProjectEntry()],
+      skills: '',
+      github: '',
+      linkedin: '',
+    };
+  }
+
+  const raw = parsed as Record<string, unknown>;
+  const education = Array.isArray(raw.education)
+    ? raw.education
+      .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+      .map((item) => ({
+        id: toSafeString(item.id) || crypto.randomUUID(),
+        school: toSafeString(item.school),
+        degree: toSafeString(item.degree),
+        year: toSafeString(item.year),
+      }))
+    : [];
+
+  const experience = Array.isArray(raw.experience)
+    ? raw.experience
+      .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+      .map((item) => ({
+        id: toSafeString(item.id) || crypto.randomUUID(),
+        company: toSafeString(item.company),
+        role: toSafeString(item.role),
+        duration: toSafeString(item.duration),
+        bullet: toSafeString(item.bullet),
+      }))
+    : [];
+
+  const projects = Array.isArray(raw.projects)
+    ? raw.projects
+      .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+      .map((item) => ({
+        id: toSafeString(item.id) || crypto.randomUUID(),
+        title: toSafeString(item.title),
+        description: toSafeString(item.description),
+      }))
+    : [];
+
+  return {
+    name: toSafeString(raw.name),
+    email: toSafeString(raw.email),
+    phone: toSafeString(raw.phone),
+    location: toSafeString(raw.location),
+    summary: toSafeString(raw.summary),
+    education: education.length ? education : [createEducationEntry()],
+    experience: experience.length ? experience : [createExperienceEntry()],
+    projects: projects.length ? projects : [createProjectEntry()],
+    skills: toSafeString(raw.skills),
+    github: toSafeString(raw.github),
+    linkedin: toSafeString(raw.linkedin),
+  };
+};
+
+const nonEmptyEducation = (draft: ResumeDraft) =>
+  draft.education.filter((entry) => entry.school.trim() || entry.degree.trim() || entry.year.trim());
+
+const nonEmptyExperience = (draft: ResumeDraft) =>
+  draft.experience.filter((entry) => entry.company.trim() || entry.role.trim() || entry.duration.trim() || entry.bullet.trim());
+
+const nonEmptyProjects = (draft: ResumeDraft) =>
+  draft.projects.filter((entry) => entry.title.trim() || entry.description.trim());
+
+const skillItems = (draft: ResumeDraft) => draft.skills.split(',').map((item) => item.trim()).filter(Boolean);
+
+const countWords = (value: string) => value.trim().split(/\s+/).filter(Boolean).length;
+
+const hasNumericImpact = (draft: ResumeDraft) => {
+  const texts = [
+    ...nonEmptyExperience(draft).map((entry) => entry.bullet),
+    ...nonEmptyProjects(draft).map((entry) => entry.description),
+  ].join(' ');
+  return /(\d|%)/.test(texts);
+};
+
+const hasCompleteEducation = (draft: ResumeDraft) =>
+  draft.education.some((entry) => entry.school.trim() && entry.degree.trim() && entry.year.trim());
+
+const computeAtsResult = (draft: ResumeDraft): AtsResult => {
+  let score = 0;
+  const suggestions: string[] = [];
+  const words = countWords(draft.summary);
+  const projects = nonEmptyProjects(draft);
+  const experience = nonEmptyExperience(draft);
+  const skills = skillItems(draft);
+  const hasLink = Boolean(draft.github.trim() || draft.linkedin.trim());
+
+  if (words >= 40 && words <= 120) score += 15;
+  else suggestions.push('Write a stronger summary (40-120 words).');
+
+  if (projects.length >= 2) score += 10;
+  else suggestions.push('Add at least 2 projects.');
+
+  if (experience.length >= 1) score += 10;
+  else suggestions.push('Add at least 1 experience entry.');
+
+  if (skills.length >= 8) score += 10;
+  else suggestions.push('Add more skills (target 8+).');
+
+  if (hasLink) score += 10;
+  else suggestions.push('Add GitHub or LinkedIn link.');
+
+  if (hasNumericImpact(draft)) score += 15;
+  else suggestions.push('Add measurable impact (numbers) in bullets.');
+
+  if (hasCompleteEducation(draft)) score += 10;
+  else suggestions.push('Complete all education fields.');
+
+  return { score: Math.min(100, score), suggestions: suggestions.slice(0, 3) };
 };
 
 type ShellProps = {
@@ -520,22 +657,18 @@ function HomePage() {
   );
 }
 
-const emptyDraft = (): ResumeDraft => ({
-  name: '',
-  email: '',
-  phone: '',
-  location: '',
-  summary: '',
-  education: [{ id: crypto.randomUUID(), school: '', degree: '', year: '' }],
-  experience: [{ id: crypto.randomUUID(), company: '', role: '', duration: '' }],
-  projects: [{ id: crypto.randomUUID(), title: '', description: '' }],
-  skills: '',
-  github: '',
-  linkedin: '',
-});
-
 function BuilderPage() {
-  const [draft, setDraft] = useState<ResumeDraft>(() => emptyDraft());
+  const [draft, setDraft] = useState<ResumeDraft>(() => readResumeDraft());
+  const ats = useMemo(() => computeAtsResult(draft), [draft]);
+  const previewEducation = nonEmptyEducation(draft);
+  const previewExperience = nonEmptyExperience(draft);
+  const previewProjects = nonEmptyProjects(draft);
+  const previewSkills = skillItems(draft);
+  const contactLine = [draft.email, draft.phone, draft.location].map((item) => item.trim()).filter(Boolean).join(' | ');
+
+  useEffect(() => {
+    localStorage.setItem(RESUME_STORAGE_KEY, JSON.stringify(draft));
+  }, [draft]);
 
   const updateEducation = (id: string, field: keyof Omit<EducationEntry, 'id'>, value: string) => {
     setDraft((prev) => ({
@@ -569,12 +702,27 @@ function BuilderPage() {
         { id: crypto.randomUUID(), school: 'KodNest Academy', degree: 'B.Tech CSE', year: '2026' },
       ],
       experience: [
-        { id: crypto.randomUUID(), company: 'Acme Labs', role: 'Frontend Intern', duration: '2025' },
+        {
+          id: crypto.randomUUID(),
+          company: 'Acme Labs',
+          role: 'Frontend Intern',
+          duration: '2025',
+          bullet: 'Improved dashboard load speed by 32% for 500+ daily users.',
+        },
       ],
       projects: [
-        { id: crypto.randomUUID(), title: 'Placement Platform', description: 'Built modular prep workflow UI.' },
+        {
+          id: crypto.randomUUID(),
+          title: 'Placement Platform',
+          description: 'Built modular prep workflow UI and reduced task completion time by 28%.',
+        },
+        {
+          id: crypto.randomUUID(),
+          title: 'Resume Analyzer',
+          description: 'Implemented deterministic checks that lifted profile completeness to 90%.',
+        },
       ],
-      skills: 'React, TypeScript, CSS, Node.js',
+      skills: 'React, TypeScript, CSS, Node.js, HTML, REST APIs, Git, Testing',
       github: 'https://github.com/shreenivas-nayakawadi',
       linkedin: 'https://linkedin.com/in/shreenivas',
     });
@@ -615,7 +763,7 @@ function BuilderPage() {
           <button
             type="button"
             className="button"
-            onClick={() => setDraft((prev) => ({ ...prev, education: [...prev.education, { id: crypto.randomUUID(), school: '', degree: '', year: '' }] }))}
+            onClick={() => setDraft((prev) => ({ ...prev, education: [...prev.education, createEducationEntry()] }))}
           >
             Add Education
           </button>
@@ -626,12 +774,13 @@ function BuilderPage() {
               <input className="input" placeholder="Company" value={entry.company} onChange={(e) => updateExperience(entry.id, 'company', e.target.value)} />
               <input className="input" placeholder="Role" value={entry.role} onChange={(e) => updateExperience(entry.id, 'role', e.target.value)} />
               <input className="input" placeholder="Duration" value={entry.duration} onChange={(e) => updateExperience(entry.id, 'duration', e.target.value)} />
+              <textarea className="textarea" placeholder="Impact bullet" value={entry.bullet} onChange={(e) => updateExperience(entry.id, 'bullet', e.target.value)} />
             </div>
           ))}
           <button
             type="button"
             className="button"
-            onClick={() => setDraft((prev) => ({ ...prev, experience: [...prev.experience, { id: crypto.randomUUID(), company: '', role: '', duration: '' }] }))}
+            onClick={() => setDraft((prev) => ({ ...prev, experience: [...prev.experience, createExperienceEntry()] }))}
           >
             Add Experience
           </button>
@@ -646,7 +795,7 @@ function BuilderPage() {
           <button
             type="button"
             className="button"
-            onClick={() => setDraft((prev) => ({ ...prev, projects: [...prev.projects, { id: crypto.randomUUID(), title: '', description: '' }] }))}
+            onClick={() => setDraft((prev) => ({ ...prev, projects: [...prev.projects, createProjectEntry()] }))}
           >
             Add Project
           </button>
@@ -659,20 +808,86 @@ function BuilderPage() {
           <input className="input" placeholder="LinkedIn" value={draft.linkedin} onChange={(e) => setDraft({ ...draft, linkedin: e.target.value })} />
         </main>
         <aside className="workspace-side">
+          <h3>ATS Readiness Score</h3>
+          <div className="score-card">
+            <div className="score-row">
+              <strong>{ats.score}</strong>
+              <span>/ 100</span>
+            </div>
+            <div className="score-meter" aria-label="ATS Readiness Score">
+              <div className="score-meter__fill" style={{ width: `${ats.score}%` }} />
+            </div>
+            <div className="suggestions">
+              {ats.suggestions.length === 0 ? (
+                <p>Strong foundation. Keep refining clarity and impact.</p>
+              ) : (
+                ats.suggestions.map((suggestion) => <p key={suggestion}>{suggestion}</p>)
+              )}
+            </div>
+          </div>
           <h3>Live Preview</h3>
           <div className="resume-preview-shell">
-            <h2>{draft.name || 'Your Name'}</h2>
-            <p>{[draft.email, draft.phone, draft.location].filter(Boolean).join(' | ') || 'email | phone | location'}</p>
-            <h3>Summary</h3>
-            <p>{draft.summary || 'Summary placeholder'}</p>
-            <h3>Education</h3>
-            <p>{draft.education[0]?.school || 'Education placeholder'}</p>
-            <h3>Experience</h3>
-            <p>{draft.experience[0]?.company || 'Experience placeholder'}</p>
-            <h3>Projects</h3>
-            <p>{draft.projects[0]?.title || 'Projects placeholder'}</p>
-            <h3>Skills</h3>
-            <p>{draft.skills || 'Skills placeholder'}</p>
+            {(draft.name.trim() || contactLine) && (
+              <section className="preview-section">
+                {draft.name.trim() ? <h2>{draft.name.trim()}</h2> : null}
+                {contactLine ? <p>{contactLine}</p> : null}
+              </section>
+            )}
+
+            {draft.summary.trim() ? (
+              <section className="preview-section">
+                <h3>Summary</h3>
+                <p>{draft.summary.trim()}</p>
+              </section>
+            ) : null}
+
+            {previewEducation.length ? (
+              <section className="preview-section">
+                <h3>Education</h3>
+                {previewEducation.map((entry) => (
+                  <p key={entry.id}>{[entry.school, entry.degree, entry.year].filter((item) => item.trim()).join(' | ')}</p>
+                ))}
+              </section>
+            ) : null}
+
+            {previewExperience.length ? (
+              <section className="preview-section">
+                <h3>Experience</h3>
+                {previewExperience.map((entry) => (
+                  <div key={entry.id}>
+                    <p>{[entry.company, entry.role, entry.duration].filter((item) => item.trim()).join(' | ')}</p>
+                    {entry.bullet.trim() ? <p>{entry.bullet.trim()}</p> : null}
+                  </div>
+                ))}
+              </section>
+            ) : null}
+
+            {previewProjects.length ? (
+              <section className="preview-section">
+                <h3>Projects</h3>
+                {previewProjects.map((entry) => (
+                  <div key={entry.id}>
+                    {entry.title.trim() ? <p>{entry.title.trim()}</p> : null}
+                    {entry.description.trim() ? <p>{entry.description.trim()}</p> : null}
+                  </div>
+                ))}
+              </section>
+            ) : null}
+
+            {previewSkills.length ? (
+              <section className="preview-section">
+                <h3>Skills</h3>
+                <p>{previewSkills.join(', ')}</p>
+              </section>
+            ) : null}
+
+            {(draft.github.trim() || draft.linkedin.trim()) ? (
+              <section className="preview-section">
+                <h3>Links</h3>
+                {draft.github.trim() ? <p>{draft.github.trim()}</p> : null}
+                {draft.linkedin.trim() ? <p>{draft.linkedin.trim()}</p> : null}
+              </section>
+            ) : null}
           </div>
         </aside>
       </section>
@@ -681,6 +896,13 @@ function BuilderPage() {
 }
 
 function CleanPreviewPage() {
+  const draft = useMemo(() => readResumeDraft(), []);
+  const previewEducation = nonEmptyEducation(draft);
+  const previewExperience = nonEmptyExperience(draft);
+  const previewProjects = nonEmptyProjects(draft);
+  const previewSkills = skillItems(draft);
+  const contactLine = [draft.email, draft.phone, draft.location].map((item) => item.trim()).filter(Boolean).join(' | ');
+
   return (
     <div className="app-shell preview-shell">
       <header className="top-bar">
@@ -690,12 +912,67 @@ function CleanPreviewPage() {
       </header>
       <ProductNav />
       <section className="preview-paper">
-        <h1>Resume Preview</h1>
-        <p>Clean, ATS-friendly black and white structure.</p>
-        <h2>Name</h2>
-        <p>email | phone | location</p>
-        <h3>Summary</h3>
-        <p>Structured summary text placeholder.</p>
+        {(draft.name.trim() || contactLine) ? (
+          <>
+            {draft.name.trim() ? <h1>{draft.name.trim()}</h1> : null}
+            {contactLine ? <p>{contactLine}</p> : null}
+          </>
+        ) : null}
+
+        {draft.summary.trim() ? (
+          <>
+            <h3>Summary</h3>
+            <p>{draft.summary.trim()}</p>
+          </>
+        ) : null}
+
+        {previewEducation.length ? (
+          <>
+            <h3>Education</h3>
+            {previewEducation.map((entry) => (
+              <p key={entry.id}>{[entry.school, entry.degree, entry.year].filter((item) => item.trim()).join(' | ')}</p>
+            ))}
+          </>
+        ) : null}
+
+        {previewExperience.length ? (
+          <>
+            <h3>Experience</h3>
+            {previewExperience.map((entry) => (
+              <div key={entry.id}>
+                <p>{[entry.company, entry.role, entry.duration].filter((item) => item.trim()).join(' | ')}</p>
+                {entry.bullet.trim() ? <p>{entry.bullet.trim()}</p> : null}
+              </div>
+            ))}
+          </>
+        ) : null}
+
+        {previewProjects.length ? (
+          <>
+            <h3>Projects</h3>
+            {previewProjects.map((entry) => (
+              <div key={entry.id}>
+                {entry.title.trim() ? <p>{entry.title.trim()}</p> : null}
+                {entry.description.trim() ? <p>{entry.description.trim()}</p> : null}
+              </div>
+            ))}
+          </>
+        ) : null}
+
+        {previewSkills.length ? (
+          <>
+            <h3>Skills</h3>
+            <p>{previewSkills.join(', ')}</p>
+          </>
+        ) : null}
+
+        {(draft.github.trim() || draft.linkedin.trim()) ? (
+          <>
+            <h3>Links</h3>
+            {draft.github.trim() ? <p>{draft.github.trim()}</p> : null}
+            {draft.linkedin.trim() ? <p>{draft.linkedin.trim()}</p> : null}
+          </>
+        ) : null}
       </section>
     </div>
   );

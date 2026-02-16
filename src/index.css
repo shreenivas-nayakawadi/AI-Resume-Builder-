@@ -255,6 +255,44 @@ p {
   max-width: 720px;
 }
 
+.preview-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.score-card {
+  border: 1px solid var(--text);
+  padding: var(--space-16);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.score-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-8);
+}
+
+.score-meter {
+  width: 100%;
+  height: var(--space-16);
+  border: 1px solid var(--text);
+  background: var(--bg);
+}
+
+.score-meter__fill {
+  height: 100%;
+  background: var(--accent);
+}
+
+.suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
 .preview-shell .top-bar,
 .preview-paper,
 .preview-shell .button,
