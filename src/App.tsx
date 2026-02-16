@@ -60,6 +60,8 @@ type ResumeDraft = {
   linkedin: string;
 };
 
+type ResumeTemplate = 'Classic' | 'Modern' | 'Minimal';
+
 const STEPS: BuildStep[] = [
   {
     number: 1,
@@ -122,11 +124,14 @@ const STEPS: BuildStep[] = [
 const PROOF_ROUTE = '/rb/proof';
 const PROOF_LINKS_KEY = 'rb_proof_links';
 const RESUME_STORAGE_KEY = 'resumeBuilderData';
+const TEMPLATE_STORAGE_KEY = 'resumeBuilderTemplate';
 const NAV_ITEMS = [
   { label: 'Builder', to: '/builder' },
   { label: 'Preview', to: '/preview' },
   { label: 'Proof', to: '/proof' },
 ];
+const TEMPLATE_OPTIONS: ResumeTemplate[] = ['Classic', 'Modern', 'Minimal'];
+const ACTION_VERBS = ['Built', 'Developed', 'Designed', 'Implemented', 'Led', 'Improved', 'Created', 'Optimized', 'Automated'];
 
 type AtsResult = {
   score: number;
@@ -295,6 +300,40 @@ const computeAtsResult = (draft: ResumeDraft): AtsResult => {
   else suggestions.push('Complete all education fields.');
 
   return { score: Math.min(100, score), suggestions: suggestions.slice(0, 3) };
+};
+
+const readTemplateChoice = (): ResumeTemplate => {
+  const value = localStorage.getItem(TEMPLATE_STORAGE_KEY);
+  if (value === 'Classic' || value === 'Modern' || value === 'Minimal') return value;
+  return 'Classic';
+};
+
+const toTemplateClass = (template: ResumeTemplate) => `template-${template.toLowerCase()}`;
+
+const startsWithActionVerb = (text: string) => {
+  const cleaned = text.trim();
+  if (!cleaned) return true;
+  return ACTION_VERBS.some((verb) => new RegExp(`^${verb}\\b`, 'i').test(cleaned));
+};
+
+const hasNumericIndicator = (text: string) => /(\d|%|x|k)/i.test(text);
+
+const getBulletGuidance = (text: string) => {
+  const guidance: string[] = [];
+  if (!text.trim()) return guidance;
+  if (!startsWithActionVerb(text)) guidance.push('Start with a strong action verb.');
+  if (!hasNumericIndicator(text)) guidance.push('Add measurable impact (numbers).');
+  return guidance;
+};
+
+const computeTopImprovements = (draft: ResumeDraft) => {
+  const improvements: string[] = [];
+  if (nonEmptyProjects(draft).length < 2) improvements.push('Add at least 2 projects.');
+  if (!hasNumericImpact(draft)) improvements.push('Add measurable impact (numbers).');
+  if (countWords(draft.summary) < 40) improvements.push('Expand summary to at least 40 words.');
+  if (skillItems(draft).length < 8) improvements.push('Add more skills (target 8+).');
+  if (nonEmptyExperience(draft).length < 1) improvements.push('Add internship or project work in experience.');
+  return improvements.slice(0, 3);
 };
 
 type ShellProps = {
@@ -635,6 +674,28 @@ function ProductNav() {
   );
 }
 
+type TemplateTabsProps = {
+  template: ResumeTemplate;
+  onChange: (template: ResumeTemplate) => void;
+};
+
+function TemplateTabs({ template, onChange }: TemplateTabsProps) {
+  return (
+    <div className="template-tabs" aria-label="Resume Templates">
+      {TEMPLATE_OPTIONS.map((option) => (
+        <button
+          key={option}
+          type="button"
+          className={`button ${template === option ? 'button-accent' : ''}`}
+          onClick={() => onChange(option)}
+        >
+          {option}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function HomePage() {
   return (
     <div className="app-shell">
@@ -659,7 +720,9 @@ function HomePage() {
 
 function BuilderPage() {
   const [draft, setDraft] = useState<ResumeDraft>(() => readResumeDraft());
+  const [template, setTemplate] = useState<ResumeTemplate>(() => readTemplateChoice());
   const ats = useMemo(() => computeAtsResult(draft), [draft]);
+  const topImprovements = useMemo(() => computeTopImprovements(draft), [draft]);
   const previewEducation = nonEmptyEducation(draft);
   const previewExperience = nonEmptyExperience(draft);
   const previewProjects = nonEmptyProjects(draft);
@@ -669,6 +732,10 @@ function BuilderPage() {
   useEffect(() => {
     localStorage.setItem(RESUME_STORAGE_KEY, JSON.stringify(draft));
   }, [draft]);
+
+  useEffect(() => {
+    localStorage.setItem(TEMPLATE_STORAGE_KEY, template);
+  }, [template]);
 
   const updateEducation = (id: string, field: keyof Omit<EducationEntry, 'id'>, value: string) => {
     setDraft((prev) => ({
@@ -736,6 +803,7 @@ function BuilderPage() {
         <span className="status-badge">In Progress</span>
       </header>
       <ProductNav />
+      <TemplateTabs template={template} onChange={setTemplate} />
       <section className="workspace">
         <main className="workspace-main">
           <h2>Builder</h2>
@@ -775,6 +843,9 @@ function BuilderPage() {
               <input className="input" placeholder="Role" value={entry.role} onChange={(e) => updateExperience(entry.id, 'role', e.target.value)} />
               <input className="input" placeholder="Duration" value={entry.duration} onChange={(e) => updateExperience(entry.id, 'duration', e.target.value)} />
               <textarea className="textarea" placeholder="Impact bullet" value={entry.bullet} onChange={(e) => updateExperience(entry.id, 'bullet', e.target.value)} />
+              {getBulletGuidance(entry.bullet).map((hint) => (
+                <p key={`${entry.id}-${hint}`} className="inline-guidance">{hint}</p>
+              ))}
             </div>
           ))}
           <button
@@ -790,6 +861,9 @@ function BuilderPage() {
             <div key={entry.id} className="entry-card">
               <input className="input" placeholder="Title" value={entry.title} onChange={(e) => updateProject(entry.id, 'title', e.target.value)} />
               <textarea className="textarea" placeholder="Description" value={entry.description} onChange={(e) => updateProject(entry.id, 'description', e.target.value)} />
+              {getBulletGuidance(entry.description).map((hint) => (
+                <p key={`${entry.id}-${hint}`} className="inline-guidance">{hint}</p>
+              ))}
             </div>
           ))}
           <button
@@ -824,9 +898,17 @@ function BuilderPage() {
                 ats.suggestions.map((suggestion) => <p key={suggestion}>{suggestion}</p>)
               )}
             </div>
+            <h3>Top 3 Improvements</h3>
+            <div className="suggestions">
+              {topImprovements.length === 0 ? (
+                <p>No critical improvements pending.</p>
+              ) : (
+                topImprovements.map((item) => <p key={item}>{item}</p>)
+              )}
+            </div>
           </div>
           <h3>Live Preview</h3>
-          <div className="resume-preview-shell">
+          <div className={`resume-preview-shell ${toTemplateClass(template)}`}>
             {(draft.name.trim() || contactLine) && (
               <section className="preview-section">
                 {draft.name.trim() ? <h2>{draft.name.trim()}</h2> : null}
@@ -897,11 +979,16 @@ function BuilderPage() {
 
 function CleanPreviewPage() {
   const draft = useMemo(() => readResumeDraft(), []);
+  const [template, setTemplate] = useState<ResumeTemplate>(() => readTemplateChoice());
   const previewEducation = nonEmptyEducation(draft);
   const previewExperience = nonEmptyExperience(draft);
   const previewProjects = nonEmptyProjects(draft);
   const previewSkills = skillItems(draft);
   const contactLine = [draft.email, draft.phone, draft.location].map((item) => item.trim()).filter(Boolean).join(' | ');
+
+  useEffect(() => {
+    localStorage.setItem(TEMPLATE_STORAGE_KEY, template);
+  }, [template]);
 
   return (
     <div className="app-shell preview-shell">
@@ -911,7 +998,8 @@ function CleanPreviewPage() {
         <span className="status-badge preview-badge">Ready</span>
       </header>
       <ProductNav />
-      <section className="preview-paper">
+      <TemplateTabs template={template} onChange={setTemplate} />
+      <section className={`preview-paper ${toTemplateClass(template)}`}>
         {(draft.name.trim() || contactLine) ? (
           <>
             {draft.name.trim() ? <h1>{draft.name.trim()}</h1> : null}
