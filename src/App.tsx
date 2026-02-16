@@ -134,6 +134,8 @@ const STEPS: BuildStep[] = [
 
 const PROOF_ROUTE = '/rb/proof';
 const PROOF_LINKS_KEY = 'rb_proof_links';
+const FINAL_SUBMISSION_KEY = 'rb_final_submission';
+const STEP7_CHECKLIST_KEY = 'rb_step_7_checklist';
 const RESUME_STORAGE_KEY = 'resumeBuilderData';
 const TEMPLATE_STORAGE_KEY = 'resumeBuilderTemplate';
 const ACCENT_STORAGE_KEY = 'resumeBuilderAccentTheme';
@@ -154,6 +156,18 @@ const ACTION_VERBS = ['Built', 'Developed', 'Designed', 'Implemented', 'Led', 'I
 const TECHNICAL_SUGGESTIONS = ['TypeScript', 'React', 'Node.js', 'PostgreSQL', 'GraphQL'];
 const SOFT_SUGGESTIONS = ['Team Leadership', 'Problem Solving'];
 const TOOLS_SUGGESTIONS = ['Git', 'Docker', 'AWS'];
+const STEP7_CHECKLIST_ITEMS = [
+  'All form sections save to localStorage',
+  'Live preview updates in real-time',
+  'Template switching preserves data',
+  'Color theme persists after refresh',
+  'ATS score calculates correctly',
+  'Score updates live on edit',
+  'Export buttons work (copy/download)',
+  'Empty states handled gracefully',
+  'Mobile responsive layout works',
+  'No console errors on any page',
+];
 
 type AtsResult = {
   score: number;
@@ -179,12 +193,32 @@ const getInitialArtifacts = () => {
   return map;
 };
 
+const getStep7Checklist = (): boolean[] => {
+  const parsed = parseJson<boolean[]>(localStorage.getItem(STEP7_CHECKLIST_KEY));
+  if (!parsed || !Array.isArray(parsed)) return STEP7_CHECKLIST_ITEMS.map(() => false);
+  return STEP7_CHECKLIST_ITEMS.map((_, index) => Boolean(parsed[index]));
+};
+
+const isStep7ChecklistComplete = () => getStep7Checklist().every(Boolean);
+
+const isValidUrl = (value: string) => {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
 const getFirstIncompleteStep = (artifacts: Record<number, StepArtifact | null>) => {
   const pending = STEPS.find((step) => !artifacts[step.number]?.uploadedAt);
+  if (!pending && !isStep7ChecklistComplete()) return 7;
   return pending?.number ?? null;
 };
 
 const getProofLinks = (): ProofLinks => {
+  const finalSubmission = parseJson<ProofLinks>(localStorage.getItem(FINAL_SUBMISSION_KEY));
+  if (finalSubmission) return finalSubmission;
   return (
     parseJson<ProofLinks>(localStorage.getItem(PROOF_LINKS_KEY)) ?? {
       lovable: '',
@@ -193,6 +227,9 @@ const getProofLinks = (): ProofLinks => {
     }
   );
 };
+
+const hasAllValidProofLinks = (links: ProofLinks) =>
+  isValidUrl(links.lovable) && isValidUrl(links.github) && isValidUrl(links.deploy);
 
 const createEducationEntry = (): EducationEntry => ({ id: crypto.randomUUID(), school: '', degree: '', year: '' });
 const createExperienceEntry = (): ExperienceEntry => ({ id: crypto.randomUUID(), company: '', role: '', duration: '', bullet: '' });
@@ -490,7 +527,9 @@ function Shell({ currentStep, children }: ShellProps) {
 function StatusBadge() {
   const artifacts = getInitialArtifacts();
   const completed = STEPS.filter((step) => artifacts[step.number]?.uploadedAt).length;
-  const status = completed === 0 ? 'Not Started' : completed === STEPS.length ? 'Shipped' : 'In Progress';
+  const proofLinks = getProofLinks();
+  const shipped = completed === STEPS.length && isStep7ChecklistComplete() && hasAllValidProofLinks(proofLinks);
+  const status = completed === 0 ? 'Not Started' : shipped ? 'Shipped' : 'In Progress';
 
   return <span className="status-badge">{status}</span>;
 }
@@ -505,6 +544,7 @@ function StepPage() {
   const [screenshotName, setScreenshotName] = useState('');
   const [copied, setCopied] = useState(false);
   const [lastAction, setLastAction] = useState('');
+  const [step7Checklist, setStep7Checklist] = useState<boolean[]>(() => getStep7Checklist());
   const firstIncomplete = getFirstIncompleteStep(artifacts);
 
   useEffect(() => {
@@ -527,7 +567,10 @@ function StepPage() {
     return <Navigate to={STEPS[0].route} replace />;
   }
 
+  const isChecklistLockedStep = step.number === 7;
+  const isChecklistComplete = step7Checklist.every(Boolean);
   const isSaved = Boolean(artifacts[step.number]?.uploadedAt);
+  const canProceed = isSaved && (!isChecklistLockedStep || isChecklistComplete);
   const isLastStep = step.number === STEPS.length;
   const nextRoute = isLastStep ? PROOF_ROUTE : STEPS[step.number].route;
 
@@ -559,6 +602,15 @@ function StepPage() {
 
   const handleBuild = () => {
     window.open('https://lovable.dev/', '_blank', 'noopener,noreferrer');
+  };
+
+  const toggleChecklistItem = (index: number) => {
+    setStep7Checklist((prev) => {
+      const next = [...prev];
+      next[index] = !next[index];
+      localStorage.setItem(STEP7_CHECKLIST_KEY, JSON.stringify(next));
+      return next;
+    });
   };
 
   return (
@@ -629,6 +681,22 @@ function StepPage() {
             {lastAction ? <p>{lastAction}</p> : null}
           </div>
 
+          {isChecklistLockedStep ? (
+            <div className="checklist-card">
+              <h3>Step 7 Test Checklist (10/10 required)</h3>
+              {STEP7_CHECKLIST_ITEMS.map((item, index) => (
+                <label key={item} className="checklist-item">
+                  <input
+                    type="checkbox"
+                    checked={step7Checklist[index]}
+                    onChange={() => toggleChecklistItem(index)}
+                  />
+                  <span>{item}</span>
+                </label>
+              ))}
+            </div>
+          ) : null}
+
           <div className="step-nav">
             {step.number > 1 ? (
               <Link className="button" to={STEPS[step.number - 2].route}>
@@ -638,16 +706,19 @@ function StepPage() {
               <span />
             )}
             <Link
-              className={`button ${isSaved ? 'button-accent' : 'button-disabled'}`}
-              to={isSaved ? nextRoute : '#'}
+              className={`button ${canProceed ? 'button-accent' : 'button-disabled'}`}
+              to={canProceed ? nextRoute : '#'}
               onClick={(event) => {
-                if (!isSaved) event.preventDefault();
+                if (!canProceed) event.preventDefault();
               }}
-              aria-disabled={!isSaved}
+              aria-disabled={!canProceed}
             >
               Next
             </Link>
           </div>
+          {isChecklistLockedStep && !isChecklistComplete ? (
+            <p className="inline-guidance">Complete all 10 checklist tests to unlock Step 8.</p>
+          ) : null}
         </main>
 
         <aside className="workspace-side">
@@ -708,6 +779,13 @@ function ProofPage() {
   const firstIncomplete = getFirstIncompleteStep(artifacts);
   const [links, setLinks] = useState<ProofLinks>(() => getProofLinks());
   const [copied, setCopied] = useState(false);
+  const checklistComplete = isStep7ChecklistComplete();
+  const linkErrors = {
+    lovable: links.lovable.trim() && !isValidUrl(links.lovable.trim()) ? 'Enter a valid URL.' : '',
+    github: links.github.trim() && !isValidUrl(links.github.trim()) ? 'Enter a valid URL.' : '',
+    deploy: links.deploy.trim() && !isValidUrl(links.deploy.trim()) ? 'Enter a valid URL.' : '',
+  };
+  const shipped = STEPS.every((step) => artifacts[step.number]?.uploadedAt) && checklistComplete && hasAllValidProofLinks(links);
 
   useEffect(() => {
     if (firstIncomplete !== null) {
@@ -718,19 +796,26 @@ function ProofPage() {
   const handleLinkChange = (field: keyof ProofLinks, value: string) => {
     const nextLinks = { ...links, [field]: value };
     setLinks(nextLinks);
+    localStorage.setItem(FINAL_SUBMISSION_KEY, JSON.stringify(nextLinks));
     localStorage.setItem(PROOF_LINKS_KEY, JSON.stringify(nextLinks));
   };
 
   const handleCopySubmission = async () => {
     const summary = [
-      'AI Resume Builder - Build Track Final Submission',
-      ...STEPS.map((step) => {
-        const artifact = artifacts[step.number];
-        return `Step ${step.number} (${step.title}): ${artifact?.uploadedAt ? 'Complete' : 'Pending'}`;
-      }),
-      `Lovable: ${links.lovable || 'N/A'}`,
-      `GitHub: ${links.github || 'N/A'}`,
-      `Deploy: ${links.deploy || 'N/A'}`,
+      '------------------------------------------',
+      'AI Resume Builder — Final Submission',
+      '',
+      `Lovable Project: ${links.lovable || 'N/A'}`,
+      `GitHub Repository: ${links.github || 'N/A'}`,
+      `Live Deployment: ${links.deploy || 'N/A'}`,
+      '',
+      'Core Capabilities:',
+      '- Structured resume builder',
+      '- Deterministic ATS scoring',
+      '- Template switching',
+      '- PDF export with clean formatting',
+      '- Persistence + validation checklist',
+      '------------------------------------------',
     ].join('\n');
 
     await navigator.clipboard.writeText(summary);
@@ -748,7 +833,7 @@ function ProofPage() {
       </section>
       <div className="workspace">
         <main className="workspace-main">
-          <h2>8 Step Status</h2>
+          <h2>Step Completion Overview</h2>
           <div className="proof-list">
             {STEPS.map((step) => (
               <div className="proof-item" key={step.number}>
@@ -757,33 +842,50 @@ function ProofPage() {
               </div>
             ))}
           </div>
+          <div className="proof-item">
+            <span>Step 7 Checklist (10 tests)</span>
+            <strong>{checklistComplete ? 'Done' : 'Pending'}</strong>
+          </div>
+          {shipped ? <p>Project 3 Shipped Successfully.</p> : null}
         </main>
         <aside className="workspace-side">
-          <h3>Submission Links</h3>
-          <label className="label" htmlFor="lovable-link">Lovable Link</label>
+          <h3>Artifact Collection (Required to mark Shipped)</h3>
+          <label className="label" htmlFor="lovable-link">Lovable Project Link</label>
           <input
             id="lovable-link"
             className="input"
+            type="url"
             value={links.lovable}
             onChange={(event) => handleLinkChange('lovable', event.target.value)}
           />
-          <label className="label" htmlFor="github-link">GitHub Link</label>
+          {linkErrors.lovable ? <p className="inline-guidance">{linkErrors.lovable}</p> : null}
+          <label className="label" htmlFor="github-link">GitHub Repository Link</label>
           <input
             id="github-link"
             className="input"
+            type="url"
             value={links.github}
             onChange={(event) => handleLinkChange('github', event.target.value)}
           />
-          <label className="label" htmlFor="deploy-link">Deploy Link</label>
+          {linkErrors.github ? <p className="inline-guidance">{linkErrors.github}</p> : null}
+          <label className="label" htmlFor="deploy-link">Deployed URL</label>
           <input
             id="deploy-link"
             className="input"
+            type="url"
             value={links.deploy}
             onChange={(event) => handleLinkChange('deploy', event.target.value)}
           />
-          <button type="button" className="button button-accent" onClick={handleCopySubmission}>
+          {linkErrors.deploy ? <p className="inline-guidance">{linkErrors.deploy}</p> : null}
+          <button
+            type="button"
+            className={`button ${hasAllValidProofLinks(links) ? 'button-accent' : 'button-disabled'}`}
+            onClick={handleCopySubmission}
+            disabled={!hasAllValidProofLinks(links)}
+          >
             {copied ? 'Copied' : 'Copy Final Submission'}
           </button>
+          <p>{shipped ? 'Status: Shipped' : 'Status: In Progress'}</p>
         </aside>
       </div>
     </Shell>
@@ -860,7 +962,7 @@ function TemplateTabs({ template, onChange }: TemplateTabsProps) {
           className={`template-thumb ${template === option ? 'template-thumb-active' : ''}`}
           onClick={() => onChange(option)}
         >
-          {template === option ? <span className="template-check">✓</span> : null}
+          {template === option ? <span className="template-check">OK</span> : null}
           <div className="template-thumb__label">{option}</div>
           {renderSketch(option)}
         </button>
